@@ -1,0 +1,6 @@
+[0-9]*.md
+!*[a-zA-Z]*.md
+.vscode
+.idea
+auth/*.json
+anyAIProxyAPI-go
