@@ -1,0 +1,3 @@
+[submodule "runner"]
+	path = runner
+	url = git@github.com:luispater/anyAIProxyAPI-runner.git
