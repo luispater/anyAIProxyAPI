@@ -49,7 +49,6 @@ func init() {
 }
 
 func main() {
-	log.Info("Starting Any AI Proxy API application...")
 	// Load application configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -59,6 +58,16 @@ func main() {
 	if !cfg.Debug {
 		log.SetLevel(log.InfoLevel)
 	}
+
+	err = playwright.Install(&playwright.RunOptions{
+		Verbose: cfg.Debug,
+	})
+	if err != nil {
+		log.Fatalf("Install playwright failed: %v", err)
+		return
+	}
+
+	log.Info("Starting Any AI Proxy API application...")
 
 	browserManagers := make([]*browser.Manager, 0)
 
