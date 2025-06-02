@@ -3,6 +3,7 @@ package method
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 func (m *Method) AlwaysTrue() bool {
@@ -28,4 +29,16 @@ func (m *Method) Int(i int) (int, error) {
 
 func (m *Method) Len(arr any) int {
 	return reflect.ValueOf(arr).Len()
+}
+
+func (m *Method) ConvertReturnToParagraphs(input string) string {
+	trimmedInput := strings.TrimSuffix(input, "\n")
+	lines := strings.Split(trimmedInput, "\n")
+	var result strings.Builder
+	for _, line := range lines {
+		result.WriteString("<p>")
+		result.WriteString(line)
+		result.WriteString("</p>")
+	}
+	return result.String()
 }

@@ -138,9 +138,10 @@ func (m *Method) UserPrompt(requestJson string) (bool, string, error) {
 	return false, "", fmt.Errorf("messages is emtpy")
 }
 
-func (m *Method) BuildPrompt(requestJson string) (string, error) {
+func (m *Method) BuildPrompt(requestJson string, includeSystem bool) (string, error) {
 	userPromptCount := 0
 	assistantPromptCount := 0
+	systemPromptCount := 0
 
 	prompts := make([]string, 0)
 
@@ -159,10 +160,12 @@ func (m *Method) BuildPrompt(requestJson string) (string, error) {
 			userPromptCount++
 		} else if role == "assistant" {
 			assistantPromptCount++
+		} else if role == "system" && includeSystem {
+			systemPromptCount++
 		}
 	}
 
-	if assistantPromptCount > 0 {
+	if assistantPromptCount > 0 || systemPromptCount > 0 {
 		for _, msg := range messages {
 			msgText := ""
 
@@ -245,6 +248,49 @@ func (m *Method) BuildPrompt(requestJson string) (string, error) {
 			prompts = append(prompts, strings.TrimSpace(msgText))
 		}
 	}
+
+	if includeSystem {
+		systemPrompt := make([]string, 0)
+		for _, msg := range messages {
+			roleResult := gjson.Get(msg.Raw, "role")
+			if roleResult.Type != gjson.String {
+				log.Error("role is not a string")
+				continue
+			}
+
+			role := roleResult.String()
+			if role != "system" {
+				continue
+			}
+
+			contentResult := gjson.Get(msg.Raw, "content")
+
+			if contentResult.Type == gjson.String {
+				systemPrompt = append(systemPrompt, contentResult.String())
+			} else if contentResult.IsArray() {
+				contents := contentResult.Array()
+				for i := 0; i < len(contents); i++ {
+					contentType := contents[i].Get("type").String()
+					if contentType == "text" {
+						contentTextResult := contents[i].Get("text")
+						if contentTextResult.Type != gjson.String {
+							log.Error("text is not a string")
+							return "", fmt.Errorf("text is not a string")
+						}
+						systemPrompt = append(systemPrompt, contentTextResult.String())
+					}
+				}
+			} else {
+				log.Error("context is not a string or array")
+				return "", fmt.Errorf("context is not a string or array")
+			}
+		}
+		if len(systemPrompt) > 0 {
+			systemPromptText := "system:\n" + strings.Join(systemPrompt, "\n")
+			prompts = append([]string{systemPromptText}, prompts...)
+		}
+	}
+
 	if len(prompts) > 0 {
 		return strings.Join(prompts, "\n\n"), nil
 	}
