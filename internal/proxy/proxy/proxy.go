@@ -26,6 +26,7 @@ type Proxy struct {
 	config   *config.Config
 	server   *http.Server
 	queue    *utils.Queue[*model.ProxyResponse]
+	adapter  *adapter.Adapter
 	sniffing bool
 }
 
@@ -114,9 +115,9 @@ func (d *httpProxyDialer) Dial(_, addr string) (net.Conn, error) {
 }
 
 // NewProxy create a new proxy object
-func NewProxy() *Proxy {
+func NewProxy(cfg *config.Config) *Proxy {
 	return &Proxy{
-		config: config.GetConfig(),
+		config: cfg,
 		queue:  utils.NewQueue[*model.ProxyResponse](),
 	}
 }
@@ -132,6 +133,14 @@ func (p *Proxy) StopSniffing() {
 
 // Start Start proxy server
 func (p *Proxy) Start() error {
+	var adapterInstance adapter.Adapter
+	var ok bool
+	if adapterInstance, ok = adapter.Adapters[p.config.Adapter]; ok {
+		p.adapter = &adapterInstance
+	} else {
+		log.Errorf("Adapter %s not found", p.config.Adapter)
+	}
+
 	addr := ":" + p.config.GetProxyPort()
 	p.server = &http.Server{
 		Addr: addr,
@@ -146,6 +155,32 @@ func (p *Proxy) Start() error {
 
 	log.Debugf("Proxy server started on %s", addr)
 	return p.server.ListenAndServe()
+}
+
+func (p *Proxy) shouldRecord(buffer []byte) bool {
+	if p.adapter != nil {
+		adp := *p.adapter
+		return adp.ShouldRecord(buffer)
+	}
+	return false
+}
+
+func (p *Proxy) handleResponse(responseBuffer chan []byte, disconnect chan bool, sniffing *bool, queue *utils.Queue[*model.ProxyResponse]) {
+	if p.adapter != nil {
+		adp := *p.adapter
+		adp.HandleResponse(responseBuffer, disconnect, sniffing, queue)
+	} else {
+		go func() {
+		outLoop:
+			for {
+				select {
+				case <-responseBuffer:
+				case <-disconnect:
+					break outLoop
+				}
+			}
+		}()
+	}
 }
 
 func (p *Proxy) Close() error {
@@ -498,7 +533,7 @@ func (p *Proxy) handleSniffHTTPS(w http.ResponseWriter, r *http.Request, host st
 				firstLoop = false
 			}
 
-			if !shouldRecord && strings.Contains(string(clientBuf[:n]), "GenerateContent") {
+			if !shouldRecord && p.shouldRecord(clientBuf[:n]) {
 				shouldRecord = true
 			}
 
@@ -569,9 +604,7 @@ func (p *Proxy) handleSniffHTTPS(w http.ResponseWriter, r *http.Request, host st
 		_ = clientConn.Close()
 	}()
 
-	var adapterInstance adapter.Adapter
-	adapterInstance = &adapter.GeminiAIStudioAdapter{}
-	go adapterInstance.HandleResponse(responseBuffer, disconnect, &p.sniffing, p.queue)
+	p.handleResponse(responseBuffer, disconnect, &p.sniffing, p.queue)
 
 	wg.Wait()
 }

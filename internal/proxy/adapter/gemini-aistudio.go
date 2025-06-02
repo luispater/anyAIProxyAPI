@@ -13,7 +13,15 @@ import (
 	"strings"
 )
 
+func init() {
+	Adapters["gemini-aistudio"] = &GeminiAIStudioAdapter{}
+}
+
 type GeminiAIStudioAdapter struct {
+}
+
+func (g *GeminiAIStudioAdapter) ShouldRecord(buffer []byte) bool {
+	return bytes.Contains(buffer, []byte("GenerateContent"))
 }
 
 func (g *GeminiAIStudioAdapter) HandleResponse(responseBuffer chan []byte, disconnect chan bool, sniffing *bool, queue *utils.Queue[*model.ProxyResponse]) {

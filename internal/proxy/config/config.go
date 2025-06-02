@@ -7,6 +7,8 @@ import (
 
 // Config stores application configuration
 type Config struct {
+	// Adapter name
+	Adapter string
 	// List of domains to sniff
 	SniffDomains map[string]bool
 	// Proxy server port

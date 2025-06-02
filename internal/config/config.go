@@ -21,6 +21,7 @@ type AppConfigRunner struct {
 }
 type AppConfigInstance struct {
 	Name        string          `yaml:"name"`
+	Adapter     string          `yaml:"adapter"`
 	ProxyURL    string          `yaml:"proxy-url"`
 	URL         string          `yaml:"url"`
 	SniffPort   string          `yaml:"sniff-port"`

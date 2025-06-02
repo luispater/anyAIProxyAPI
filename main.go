@@ -90,6 +90,7 @@ func main() {
 		if cfg.Instance[i].ProxyURL != "" {
 			proxyCfg.SetProxyServerURL(cfg.Instance[i].ProxyURL)
 		}
+		proxyCfg.Adapter = cfg.Instance[i].Adapter
 		proxyCfg.SetProxyPort(cfg.Instance[i].SniffPort)
 
 		// Add domains to sniff
@@ -98,11 +99,11 @@ func main() {
 			proxyCfg.AddSniffDomain(strings.TrimSpace(domains[j]))
 		}
 
-		// Create proxy server
-		p := proxy.NewProxy()
+		// Create a proxy server
+		p := proxy.NewProxy(proxyCfg)
 		proxies[cfg.Instance[i].Name] = p
 
-		// Start proxy server in the main goroutine
+		// Start a proxy server in the main goroutine
 		go func() {
 			if err = p.Start(); err != nil {
 				log.Fatalf("Proxy server failed to start: %v", err)
@@ -228,6 +229,9 @@ func main() {
 						err = os.WriteFile(mapCfg[instanceName].AuthFile, jsonData, 0644)
 						if err != nil {
 							log.Debugf("Error writing storage state to file %s: %v", mapCfg[instanceName].AuthFile, err)
+							continue
+						} else {
+							log.Debugf("Successfully writing storage state to file %s", mapCfg[instanceName].AuthFile)
 							continue
 						}
 					}
