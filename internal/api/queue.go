@@ -114,14 +114,14 @@ func (q *RequestQueue) processLoop() {
 			select {
 			case task.Response <- response:
 			case <-q.ctx.Done():
-				log.Debugf("Context cancelled while sending response for task %s", task.ID)
+				log.Debugf("Content cancelled while sending response for task %s", task.ID)
 				return
 			case <-time.After(30 * time.Second):
 				log.Debugf("Timeout sending response for task %s", task.ID)
 			}
 
 		case <-q.ctx.Done():
-			log.Debug("Context cancelled, stopping process loop")
+			log.Debug("Content cancelled, stopping process loop")
 			return
 		}
 	}

@@ -461,10 +461,13 @@ func (p *Proxy) handleSniffHTTPS(w http.ResponseWriter, r *http.Request, host st
 
 		// create tls connection
 		targetConn = tls.Client(conn, &tls.Config{
-			InsecureSkipVerify: true,
+			InsecureSkipVerify: false,
+			ServerName:         domain,
+			MinVersion:         tls.VersionTLS12,
+			MaxVersion:         tls.VersionTLS13,
 		})
 		if errHandshake := targetConn.Handshake(); errHandshake != nil {
-			log.Debugf("TLS handshake with target server failed: %v", errHandshake)
+			log.Debugf("TLS handshake with target server %s failed: %v", domain, errHandshake)
 			_ = conn.Close()
 			return
 		}
@@ -539,6 +542,7 @@ func (p *Proxy) handleSniffHTTPS(w http.ResponseWriter, r *http.Request, host st
 
 			if shouldRecord {
 				requestData.Write(clientBuf[:n])
+				// log.Info(requestData.String())
 			}
 
 			_, err = targetConn.Write(clientBuf[:n])

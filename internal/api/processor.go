@@ -113,8 +113,8 @@ func (cp *ChatProcessor) processNonStreamingTask(instanceName string, appConfigR
 					jsonOutput, _ := sjson.Set(jsonTemplate, "id", chatCmplId)
 					jsonOutput, _ = sjson.Set(jsonOutput, "created", timestamp)
 
-					if data.Context != "" {
-						jsonOutput, _ = sjson.Set(jsonOutput, "choices.0.message.content", data.Context)
+					if data.Content != "" {
+						jsonOutput, _ = sjson.Set(jsonOutput, "choices.0.message.content", data.Content)
 					} else {
 						jsonOutput, _ = sjson.Set(jsonOutput, "choices.0.message.content", nil)
 					}
@@ -213,9 +213,9 @@ func (cp *ChatProcessor) processStreamingTask(instanceName string, appConfigRunn
 				if len(data.ReasoningContent) > len(lastReasoningContent) {
 					jsonOutput, _ = sjson.Set(jsonTemplate, "choices.0.delta.reasoning_content", data.ReasoningContent[len(lastReasoningContent):])
 					lastReasoningContent = data.ReasoningContent
-				} else if len(data.Context) > len(lastContext) {
-					jsonOutput, _ = sjson.Set(jsonTemplate, "choices.0.delta.content", data.Context[len(lastContext):])
-					lastContext = data.Context
+				} else if len(data.Content) > len(lastContext) {
+					jsonOutput, _ = sjson.Set(jsonTemplate, "choices.0.delta.content", data.Content[len(lastContext):])
+					lastContext = data.Content
 				} else if data.Done {
 					jsonOutput, _ = sjson.Set(jsonTemplate, "choices.0.finish_reason", "stop")
 					jsonOutput, _ = sjson.Set(jsonOutput, "choices.0.native_finish_reason", "stop")

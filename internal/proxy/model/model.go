@@ -1,7 +1,7 @@
 package model
 
 type ProxyResponse struct {
-	Context          string
+	Content          string
 	ReasoningContent string
 	ToolCalls        string
 	Done             bool

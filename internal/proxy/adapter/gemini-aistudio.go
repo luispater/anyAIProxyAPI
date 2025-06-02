@@ -171,7 +171,7 @@ func (g *GeminiAIStudioAdapter) decompressGzip(dataBuffer []byte, done bool) (*m
 	}
 
 	return &model.ProxyResponse{
-		Context:          body,
+		Content:          body,
 		ReasoningContent: think,
 		ToolCalls:        toolCalls,
 		Done:             done,
