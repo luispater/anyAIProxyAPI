@@ -114,12 +114,14 @@ func (rm *RunnerManager) LoadConfiguration(name, path string) error {
 // LoadConfigurations scans all yaml files in the runner directory and calls LoadConfiguration method by filename
 func (rm *RunnerManager) LoadConfigurations() error {
 	// Scan all yaml and yml files in the runner directory
-	yamlFiles, err := filepath.Glob(fmt.Sprintf("runner/%s/*.yaml", rm.name))
+	pattern := filepath.Join("runner", rm.name, "*.yaml")
+	yamlFiles, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to scan yaml files: %v", err)
 	}
 
-	ymlFiles, err := filepath.Glob(fmt.Sprintf("runner/%s/*.yml", rm.name))
+	pattern = filepath.Join("runner", rm.name, "*.yml")
+	ymlFiles, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to scan yml files: %v", err)
 	}

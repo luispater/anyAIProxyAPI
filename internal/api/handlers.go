@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var mutex sync.Mutex
+var RequestMutex sync.Mutex
 
 // APIHandlers contains the handlers for API endpoints
 type APIHandlers struct {
@@ -38,8 +38,8 @@ func NewAPIHandlers(appConfig *config.AppConfig, queue *RequestQueue, pages map[
 
 // ChatCompletions handles the /v1/chat/completions endpoint
 func (h *APIHandlers) ChatCompletions(c *gin.Context) {
-	defer mutex.Unlock()
-	mutex.Lock()
+	defer RequestMutex.Unlock()
+	RequestMutex.Lock()
 	rawJson, err := c.GetRawData()
 	// If data retrieval fails, return 400 error
 	if err != nil {

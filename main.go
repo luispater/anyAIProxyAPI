@@ -235,7 +235,9 @@ func main() {
 				}
 
 				if saveState {
+					api.RequestMutex.Lock()
 					storageState, errStorageState := p.Context().StorageState()
+					api.RequestMutex.Unlock()
 					if errStorageState != nil {
 						log.Debugf("Error getting storage state: %v", err)
 						continue
