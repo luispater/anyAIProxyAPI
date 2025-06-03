@@ -83,14 +83,14 @@ outLoop:
 						}
 						responseBody = responseBody[lengthCrlfIdx+2+int(length)+2:]
 						dataBuffer = append(dataBuffer, chunkedData...)
-						log.Infof("Buffer length: %d", len(dataBuffer))
+
 						result, err := g.createResponse(dataBuffer, false)
 						if err == nil {
 							if *sniffing {
 								queue.Enqueue(result)
 							}
 						}
-						log.Infof("result: %v, %v, %v", result, err == nil, *sniffing)
+
 					}
 				}
 			}
@@ -105,7 +105,7 @@ outLoop:
 			queue.Enqueue(result)
 		}
 	}
-	log.Infof("result: %v, %v, %v", result, err == nil, *sniffing)
+
 }
 
 func (g *ChatGPTAdapter) createResponse(dataBuffer []byte, done bool) (*model.ProxyResponse, error) {
@@ -117,7 +117,7 @@ func (g *ChatGPTAdapter) createResponse(dataBuffer []byte, done bool) (*model.Pr
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("no match data")
 	}
-	log.Infof("All matches: %v", matches)
+
 	for i := 0; i < len(matches); i++ {
 		match := matches[i]
 		log.Infof("Buffer 1: %s", match[0])
