@@ -12,10 +12,9 @@ func (m *Method) InInnerHTML(selector, htmlContent string) error {
 			return el;
 		}
 	`
-	result, err := m.page.Evaluate(jsScript, []any{selector, htmlContent})
+	_, err := m.page.Evaluate(jsScript, []any{selector, htmlContent})
 	if err != nil {
 		log.Error(err)
 	}
-	log.Info(result, selector, htmlContent)
 	return err
 }

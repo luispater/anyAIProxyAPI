@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/luispater/anyAIProxyAPI/internal/proxy/model"
 	"github.com/luispater/anyAIProxyAPI/internal/proxy/utils"
 	log "github.com/sirupsen/logrus"
@@ -82,12 +83,14 @@ outLoop:
 						}
 						responseBody = responseBody[lengthCrlfIdx+2+int(length)+2:]
 						dataBuffer = append(dataBuffer, chunkedData...)
+						log.Infof("Buffer length: %d", len(dataBuffer))
 						result, err := g.createResponse(dataBuffer, false)
 						if err == nil {
 							if *sniffing {
 								queue.Enqueue(result)
 							}
 						}
+						log.Infof("result: %v, %v, %v", result, err == nil, *sniffing)
 					}
 				}
 			}
@@ -96,25 +99,38 @@ outLoop:
 		}
 	}
 
-	result, errDecompressGzip := g.createResponse(dataBuffer, true)
-	if errDecompressGzip == nil {
+	result, err := g.createResponse(dataBuffer, true)
+	if err == nil {
 		if *sniffing {
 			queue.Enqueue(result)
 		}
 	}
+	log.Infof("result: %v, %v, %v", result, err == nil, *sniffing)
 }
 
 func (g *ChatGPTAdapter) createResponse(dataBuffer []byte, done bool) (*model.ProxyResponse, error) {
 	content := ""
 
-	pattern := `(?m)^data\:\s(\{.*?\})$`
+	pattern := `data:(.*?)\n\n`
 	re := regexp.MustCompile(pattern)
 	matches := re.FindAllStringSubmatch(string(dataBuffer), -1)
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("no match data")
+	}
+	log.Infof("All matches: %v", matches)
 	for i := 0; i < len(matches); i++ {
 		match := matches[i]
+		log.Infof("Buffer 1: %s", match[0])
+		log.Infof("Buffer 2: %s", match[1])
 		if len(match) == 2 {
-			c := g.getDataContent(match[1])
-			content = content + c
+			log.Info(match[1])
+			c, d := g.getDataContent(match[1])
+			if !d {
+				content = content + c
+			} else {
+				done = true
+				break
+			}
 		}
 	}
 
@@ -126,11 +142,17 @@ func (g *ChatGPTAdapter) createResponse(dataBuffer []byte, done bool) (*model.Pr
 	}, nil
 }
 
-func (g *ChatGPTAdapter) getDataContent(jsonData string) string {
+func (g *ChatGPTAdapter) getDataContent(jsonData string) (string, bool) {
+	if jsonData == "[DONE]" {
+		return "", true
+	}
 	result := ""
 	operationResult := gjson.Get(jsonData, "o")
 	if operationResult.Type == gjson.Null {
-		result = result + gjson.Get(jsonData, "v").String()
+		vResult := gjson.Get(jsonData, "v")
+		if vResult.Type == gjson.String {
+			result = result + gjson.Get(jsonData, "v").String()
+		}
 	} else if operationResult.Type == gjson.String {
 		operation := operationResult.String()
 		if operation == "add" {
@@ -156,7 +178,12 @@ func (g *ChatGPTAdapter) getDataContent(jsonData string) string {
 					}
 				}
 			}
+		} else if operation == "append" {
+			vResult := gjson.Get(jsonData, "v")
+			if vResult.Type == gjson.String {
+				result = result + gjson.Get(jsonData, "v").String()
+			}
 		}
 	}
-	return result
+	return result, false
 }
