@@ -52,14 +52,14 @@ func (m *Manager) LaunchBrowserAndContext() error {
 	log.Debug("Browser launched successfully.")
 
 	contextOptions := playwright.BrowserNewContextOptions{}
-	if m.Cfg.Instance[m.cfgIndex].AuthFile != "" {
-		if _, err = os.Stat(m.Cfg.Instance[m.cfgIndex].AuthFile); err == nil {
-			log.Infof("Loading authentication state from: %s", m.Cfg.Instance[m.cfgIndex].AuthFile)
-			contextOptions.StorageStatePath = playwright.String(m.Cfg.Instance[m.cfgIndex].AuthFile)
+	if m.Cfg.Instance[m.cfgIndex].Auth.File != "" {
+		if _, err = os.Stat(m.Cfg.Instance[m.cfgIndex].Auth.File); err == nil {
+			log.Infof("Loading authentication state from: %s", m.Cfg.Instance[m.cfgIndex].Auth.File)
+			contextOptions.StorageStatePath = playwright.String(m.Cfg.Instance[m.cfgIndex].Auth.File)
 		} else if os.IsNotExist(err) {
-			log.Infof("Authentication state file not found at %s. Proceeding without loading state. It will be created if you save state.", m.Cfg.Instance[m.cfgIndex].AuthFile)
+			log.Infof("Authentication state file not found at %s. Proceeding without loading state. It will be created if you save state.", m.Cfg.Instance[m.cfgIndex].Auth.File)
 		} else {
-			log.Infof("Error checking auth state file %s: %v. Proceeding without loading state.", m.Cfg.Instance[m.cfgIndex].AuthFile, err)
+			log.Infof("Error checking auth state file %s: %v. Proceeding without loading state.", m.Cfg.Instance[m.cfgIndex].Auth.File, err)
 		}
 	}
 	contextOptions.Proxy = &playwright.Proxy{

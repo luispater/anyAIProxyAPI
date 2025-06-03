@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -213,27 +214,56 @@ func main() {
 			os.Exit(0)
 		case <-time.After(5 * time.Second):
 			for instanceName, p := range pages {
-				if p.URL() == mapCfg[instanceName].URL {
-					if _, err = os.Stat(mapCfg[instanceName].AuthFile); os.IsNotExist(err) {
-						storageState, errStorageState := p.Context().StorageState()
-						if errStorageState != nil {
-							log.Debugf("Error getting storage state: %v", err)
-							continue
-						}
-						jsonData, errMarshalIndent := json.MarshalIndent(storageState, "", "  ")
-						if errMarshalIndent != nil {
-							log.Debugf("Error marshalling storage state to JSON: %v", err)
-							continue
-						}
+				if mapCfg[instanceName].Auth.Check != "" {
+					checkLocator := pages[instanceName].Locator(mapCfg[instanceName].Auth.Check)
+					count, errCount := checkLocator.Count()
+					if errCount != nil || count == 0 {
+						continue
+					}
+				}
 
-						err = os.WriteFile(mapCfg[instanceName].AuthFile, jsonData, 0644)
+				saveState := false
+				if fileInfo, errStat := os.Stat(mapCfg[instanceName].Auth.File); os.IsNotExist(errStat) {
+					saveState = true
+				} else {
+					lastModified := fileInfo.ModTime()
+					now := time.Now()
+					duration := now.Sub(lastModified)
+					if duration > 5*time.Minute {
+						saveState = true
+					}
+				}
+
+				if saveState {
+					storageState, errStorageState := p.Context().StorageState()
+					if errStorageState != nil {
+						log.Debugf("Error getting storage state: %v", err)
+						continue
+					}
+					jsonData, errMarshalIndent := json.MarshalIndent(storageState, "", "  ")
+					if errMarshalIndent != nil {
+						log.Debugf("Error marshalling storage state to JSON: %v", err)
+						continue
+					}
+
+					authAbsPath, errAbs := filepath.Abs(mapCfg[instanceName].Auth.File)
+					if errAbs != nil {
+						continue
+					}
+					authDirName := filepath.Dir(authAbsPath)
+					_, errStat := os.Stat(filepath.Dir(authAbsPath))
+					if os.IsNotExist(errStat) {
+						err = os.MkdirAll(authDirName, 0755)
 						if err != nil {
-							log.Debugf("Error writing storage state to file %s: %v", mapCfg[instanceName].AuthFile, err)
-							continue
-						} else {
-							log.Debugf("Successfully writing storage state to file %s", mapCfg[instanceName].AuthFile)
 							continue
 						}
+					}
+
+					err = os.WriteFile(mapCfg[instanceName].Auth.File, jsonData, 0644)
+					if err != nil {
+						log.Debugf("Error writing storage state to file %s: %v", mapCfg[instanceName].Auth.File, err)
+					} else {
+						log.Debugf("Successfully writing storage state to file %s", mapCfg[instanceName].Auth.File)
 					}
 				}
 			}

@@ -20,14 +20,19 @@ type AppConfigRunner struct {
 	ContextCanceled string `yaml:"context_canceled"`
 }
 type AppConfigInstance struct {
-	Name        string          `yaml:"name"`
-	Adapter     string          `yaml:"adapter"`
-	ProxyURL    string          `yaml:"proxy-url"`
-	URL         string          `yaml:"url"`
-	SniffPort   string          `yaml:"sniff-port"`
-	SniffDomain string          `yaml:"sniff-domain"`
-	AuthFile    string          `yaml:"auth-file"`
-	Runner      AppConfigRunner `yaml:"runner"`
+	Name        string                `yaml:"name"`
+	Adapter     string                `yaml:"adapter"`
+	ProxyURL    string                `yaml:"proxy-url"`
+	URL         string                `yaml:"url"`
+	SniffPort   string                `yaml:"sniff-port"`
+	SniffDomain string                `yaml:"sniff-domain"`
+	Auth        AppConfigInstanceAuth `yaml:"auth"`
+	Runner      AppConfigRunner       `yaml:"runner"`
+}
+
+type AppConfigInstanceAuth struct {
+	File  string `yaml:"file"`
+	Check string `yaml:"check"`
 }
 
 // LoadConfig loads configuration from environment variables or defaults.
