@@ -7,12 +7,13 @@ import (
 
 // AppConfig holds the application configuration.
 type AppConfig struct {
-	Version      string              `yaml:"version"`
-	Debug        bool                `yaml:"debug"`
-	CamoufoxPath string              `yaml:"camoufox-path"`
-	Headless     bool                `yaml:"headless"`
-	ApiPort      string              `yaml:"api-port"`
-	Instance     []AppConfigInstance `yaml:"instance"`
+	Version                 string              `yaml:"version"`
+	Debug                   bool                `yaml:"debug"`
+	CamoufoxPath            string              `yaml:"camoufox-path"`
+	FingerprintChromiumPath string              `yaml:"fingerprint-chromium-path"`
+	Headless                bool                `yaml:"headless"`
+	ApiPort                 string              `yaml:"api-port"`
+	Instance                []AppConfigInstance `yaml:"instance"`
 }
 type AppConfigRunner struct {
 	Init            string `yaml:"init"`

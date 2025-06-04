@@ -34,17 +34,24 @@ func NewManager(cfg *config.AppConfig, cfgIndex int) (*Manager, error) {
 
 // LaunchBrowserAndContext launches the configured browser and creates a new context with storage state.
 func (m *Manager) LaunchBrowserAndContext() error {
+	var browser playwright.Browser
+	var err error
 	launchOptions := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(m.Cfg.Headless),
 	}
-	if m.Cfg.CamoufoxPath != "" {
+	if m.Cfg.FingerprintChromiumPath != "" {
+		launchOptions.ExecutablePath = playwright.String(m.Cfg.FingerprintChromiumPath)
+		launchOptions.Args = []string{"--fingerprint=1000", "--timezone='America/Los_Angeles'", "--ignore-certificate-errors"}
+		log.Debugf("Attempting to launch Fingerprint Chromium from: %s", m.Cfg.CamoufoxPath)
+		browser, err = m.pw.Chromium.Launch(launchOptions)
+	} else if m.Cfg.CamoufoxPath != "" {
 		launchOptions.ExecutablePath = playwright.String(m.Cfg.CamoufoxPath)
 		log.Debugf("Attempting to launch Camoufox from: %s", m.Cfg.CamoufoxPath)
+		browser, err = m.pw.Firefox.Launch(launchOptions)
 	} else {
 		log.Debug("Camoufox path not specified, launching default Playwright Firefox.")
 	}
 
-	browser, err := m.pw.Firefox.Launch(launchOptions)
 	if err != nil {
 		return err
 	}

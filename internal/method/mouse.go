@@ -8,12 +8,13 @@ import (
 
 func (m *Method) Click(elementSelector string, timeout float64) error {
 	log.Debugf("Attempting to find and click element with selector: %s", elementSelector)
-	element := m.page.Locator(elementSelector).First() // Use First() to get the first match if multiple
+	element := m.page.Locator(elementSelector) // Use First() to get the first match if multiple
 	count, err := element.Count()
 	if err != nil {
 		return fmt.Errorf("error counting elements with selector '%s': %v", elementSelector, err)
 	}
 	if count > 0 {
+		element = element.First()
 		isVisible, errIsVisible := element.IsVisible()
 		if errIsVisible != nil {
 			return fmt.Errorf("error checking visibility of element '%s': %v", elementSelector, errIsVisible)

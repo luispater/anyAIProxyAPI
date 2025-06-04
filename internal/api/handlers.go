@@ -17,6 +17,7 @@ import (
 )
 
 var RequestMutex sync.Mutex
+var ScreenshotMutex sync.Mutex
 
 // APIHandlers contains the handlers for API endpoints
 type APIHandlers struct {
@@ -33,6 +34,29 @@ func NewAPIHandlers(appConfig *config.AppConfig, queue *RequestQueue, pages map[
 		pages:     pages,
 		debug:     debug,
 		appConfig: appConfig,
+	}
+}
+
+func (h *APIHandlers) TakeScreenshot(c *gin.Context) {
+	defer ScreenshotMutex.Unlock()
+	ScreenshotMutex.Lock()
+	instanceName, ok := c.GetQuery("name")
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if page, hasKey := h.pages[instanceName]; hasKey {
+		c.Header("Content-Type", "image/png")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Header("Access-Control-Allow-Origin", "*")
+		screenshot, err := page.Screenshot()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request: %v", err), "code": 500})
+		}
+		_, _ = c.Writer.Write(screenshot)
+	} else {
+		c.Status(http.StatusNotFound)
 	}
 }
 

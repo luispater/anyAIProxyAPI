@@ -91,6 +91,8 @@ func (s *Server) setupRoutes() {
 			},
 		})
 	})
+
+	s.engine.GET("/screenshot", s.handlers.TakeScreenshot)
 }
 
 // Start starts the API server
