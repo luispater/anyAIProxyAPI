@@ -7,24 +7,22 @@ import (
 	"github.com/luispater/anyAIProxyAPI/internal/proxy/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
-	"regexp"
 	"strconv"
 	"strings"
 )
 
 func init() {
-	Adapters["gemini-aistudio"] = &GeminiAIStudioAdapter{}
+	Adapters["grok"] = &GrokAdapter{}
 }
 
-type GeminiAIStudioAdapter struct {
+type GrokAdapter struct {
 }
 
-func (g *GeminiAIStudioAdapter) ShouldRecord(buffer []byte) bool {
-	return bytes.Contains(buffer, []byte("GenerateContent"))
+func (g *GrokAdapter) ShouldRecord(buffer []byte) bool {
+	return bytes.Contains(buffer, []byte("rest/app-chat/conversations/new")) || (bytes.Contains(buffer, []byte("rest/app-chat/conversations/")) && bytes.Contains(buffer, []byte("/responses")))
 }
 
-func (g *GeminiAIStudioAdapter) HandleResponse(responseBuffer chan []byte, disconnect chan bool, sniffing *bool, queue *utils.Queue[*model.ProxyResponse]) {
+func (g *GrokAdapter) HandleResponse(responseBuffer chan []byte, disconnect chan bool, sniffing *bool, queue *utils.Queue[*model.ProxyResponse]) {
 	hasAllHeader := false
 	responseHeader := make([]byte, 0)
 	responseBody := make([]byte, 0)
@@ -92,6 +90,8 @@ outLoop:
 									queue.Enqueue(result)
 								}
 							}
+							log.Debug(string(responseHeader))
+							log.Debug(result, errDecompressGzip)
 						}
 					}
 				}
@@ -107,9 +107,10 @@ outLoop:
 			queue.Enqueue(result)
 		}
 	}
+	log.Debug(result, errDecompressGzip)
 }
 
-func (g *GeminiAIStudioAdapter) decompressGzip(dataBuffer []byte, done bool) (*model.ProxyResponse, error) {
+func (g *GrokAdapter) decompressGzip(dataBuffer []byte, done bool) (*model.ProxyResponse, error) {
 	buffer := bytes.NewBuffer(dataBuffer)
 	gzReader, errReader := gzip.NewReader(buffer)
 	if errReader != nil {
@@ -133,41 +134,38 @@ func (g *GeminiAIStudioAdapter) decompressGzip(dataBuffer []byte, done bool) (*m
 	}
 	_ = gzReader.Close()
 
-	pattern := `\[\[\[null,(.*?)]],"model"]`
-	re := regexp.MustCompile(pattern)
-
 	think := ""
 	body := ""
 	toolCalls := ""
-	arrToolCalls := make([]string, 0)
-	input := string(result)
-	matches := re.FindAllString(input, -1)
-	for _, match := range matches {
-		value := gjson.Get(match, "0.0")
-		if value.IsArray() {
-			arr := value.Array()
-			if len(arr) == 2 {
-				body = body + arr[1].String()
-			} else if len(arr) == 11 && arr[1].Type == gjson.Null && arr[10].Type == gjson.JSON {
-				if !arr[10].IsArray() {
-					continue
-				}
-				arrayToolCalls := arr[10].Array()
-				funcName := arrayToolCalls[0].String()
-				argumentsStr := arrayToolCalls[1].String()
-				params := g.parseToolCallParams(argumentsStr)
 
-				toolCallsTemplate := `{"id":"","index":0,"type":"function","function":{"name":"","arguments":""}}`
-				tcs, _ := sjson.Set(toolCallsTemplate, "function.name", funcName)
-				tcs, _ = sjson.Set(tcs, "function.arguments", params)
-				arrToolCalls = append(arrToolCalls, tcs)
-			} else if len(arr) > 2 {
-				think = think + arr[1].String()
+	parsedObjects := strings.Split(string(result), "\n")
+	for _, obj := range parsedObjects {
+		modelResponseResult := gjson.Get(obj, "result.response.modelResponse")
+		if modelResponseResult.Type == gjson.Null {
+			token := ""
+			tokenResult := gjson.Get(obj, "result.response.token")
+			if tokenResult.Type == gjson.String {
+				token = tokenResult.String()
+			} else {
+				continue
+			}
+
+			isThinkingResult := gjson.Get(obj, "result.response.isThinking")
+			if isThinkingResult.Type == gjson.True {
+				think = think + token
+			} else if isThinkingResult.Type == gjson.False {
+				body = body + token
+			}
+		} else {
+			messageResult := modelResponseResult.Get("message")
+			if messageResult.Type == gjson.String {
+				body = messageResult.String()
+			}
+			thinkingTraceResult := modelResponseResult.Get("thinkingTrace")
+			if thinkingTraceResult.Type == gjson.String {
+				think = thinkingTraceResult.String()
 			}
 		}
-	}
-	if len(arrToolCalls) > 0 {
-		toolCalls = "[" + strings.Join(arrToolCalls, ",") + "]"
 	}
 
 	return &model.ProxyResponse{
@@ -178,38 +176,38 @@ func (g *GeminiAIStudioAdapter) decompressGzip(dataBuffer []byte, done bool) (*m
 	}, nil
 }
 
-func (g *GeminiAIStudioAdapter) parseToolCallParams(argumentsStr string) string {
-	arguments := gjson.Get(argumentsStr, "0")
-	if !arguments.IsArray() {
-		return ""
-	}
-	funcParams := `{}`
-	args := arguments.Array()
-	for i := 0; i < len(args); i++ {
-		if args[i].IsArray() {
-			arg := args[i].String()
-			paramName := gjson.Get(arg, "0")
-			paramValue := gjson.Get(arg, "1")
-			if paramValue.IsArray() {
-				v := paramValue.Array()
-				if len(v) == 1 { // null
-					funcParams, _ = sjson.Set(funcParams, paramName.String(), nil)
-				} else if len(v) == 2 { // number and integer
-					funcParams, _ = sjson.Set(funcParams, paramName.String(), v[1].Value())
-				} else if len(v) == 3 { // string
-					funcParams, _ = sjson.Set(funcParams, paramName.String(), v[2].String())
-				} else if len(v) == 4 { // Boolean
-					funcParams, _ = sjson.Set(funcParams, paramName.String(), v[3].Int() == 1)
-				} else if len(v) == 5 { // object
-					result := g.parseToolCallParams(v[4].Raw)
-					if result == "" {
-						funcParams, _ = sjson.Set(funcParams, paramName.String(), nil)
-					} else {
-						funcParams, _ = sjson.SetRaw(funcParams, paramName.String(), result)
-					}
+func (g *GrokAdapter) extractJsonStrings(str string) []string {
+	var objects []string
+	var start int
+	braceCount := 0
+	inString := false
+	escape := false
+
+	for i, char := range str {
+		if char == '\\' && inString {
+			escape = !escape
+			continue
+		}
+		if char == '"' && !escape {
+			inString = !inString
+		}
+		escape = false
+
+		if !inString {
+			if char == '{' {
+				if braceCount == 0 {
+					start = i
+				}
+				braceCount++
+			} else if char == '}' {
+				braceCount--
+				if braceCount == 0 {
+					jsonStr := str[start : i+1]
+					objects = append(objects, jsonStr)
 				}
 			}
 		}
 	}
-	return funcParams
+
+	return objects
 }

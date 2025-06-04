@@ -39,16 +39,19 @@ func (m *Manager) LaunchBrowserAndContext() error {
 	launchOptions := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(m.Cfg.Headless),
 	}
-	if m.Cfg.FingerprintChromiumPath != "" {
-		launchOptions.ExecutablePath = playwright.String(m.Cfg.FingerprintChromiumPath)
-		launchOptions.Args = []string{"--fingerprint=1000", "--timezone='America/Los_Angeles'", "--ignore-certificate-errors"}
-		log.Debugf("Attempting to launch Fingerprint Chromium from: %s", m.Cfg.CamoufoxPath)
+
+	if m.Cfg.Browser.Use == "fingerprint-chromium" {
+		launchOptions.ExecutablePath = playwright.String(m.Cfg.Browser.FingerprintChromiumPath)
+		launchOptions.Args = m.Cfg.Browser.Args
+		log.Debugf("Attempting to launch Fingerprint Chromium from: %s", m.Cfg.Browser.CamoufoxPath)
 		browser, err = m.pw.Chromium.Launch(launchOptions)
-	} else if m.Cfg.CamoufoxPath != "" {
-		launchOptions.ExecutablePath = playwright.String(m.Cfg.CamoufoxPath)
-		log.Debugf("Attempting to launch Camoufox from: %s", m.Cfg.CamoufoxPath)
+	} else if m.Cfg.Browser.Use == "camoufox" {
+		launchOptions.ExecutablePath = playwright.String(m.Cfg.Browser.CamoufoxPath)
+		launchOptions.Args = m.Cfg.Browser.Args
+		log.Debugf("Attempting to launch Camoufox from: %s", m.Cfg.Browser.CamoufoxPath)
 		browser, err = m.pw.Firefox.Launch(launchOptions)
 	} else {
+		browser, err = m.pw.Firefox.Launch(launchOptions)
 		log.Debug("Camoufox path not specified, launching default Playwright Firefox.")
 	}
 

@@ -120,10 +120,10 @@ func (g *ChatGPTAdapter) createResponse(dataBuffer []byte, done bool) (*model.Pr
 
 	for i := 0; i < len(matches); i++ {
 		match := matches[i]
-		log.Infof("Buffer 1: %s", match[0])
-		log.Infof("Buffer 2: %s", match[1])
+		// log.Infof("Buffer 1: %s", match[0])
+		// log.Infof("Buffer 2: %s", match[1])
 		if len(match) == 2 {
-			log.Info(match[1])
+			// log.Info(match[1])
 			c, d := g.getDataContent(match[1])
 			if !d {
 				content = content + c
