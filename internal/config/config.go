@@ -13,6 +13,18 @@ type AppConfig struct {
 	Headless bool                `yaml:"headless"`
 	ApiPort  string              `yaml:"api-port"`
 	Instance []AppConfigInstance `yaml:"instance"`
+	Chromedp []ChromedpConfig    `yaml:"chromedp,omitempty"`
+}
+
+// ChromedpConfig holds configuration specific to Chromedp instances.
+type ChromedpConfig struct {
+	Name        string   `yaml:"name"` // Optional name for the config
+	BrowserPath string   `yaml:"browser-path,omitempty"`
+	Headless    bool     `yaml:"headless,omitempty"`
+	UserDataDir string   `yaml:"user-data-dir,omitempty"`
+	Proxy       string   `yaml:"proxy,omitempty"`
+	UserAgent   string   `yaml:"user-agent,omitempty"`
+	Args        []string `yaml:"args,omitempty"`
 }
 
 type AppConfigBrowser struct {

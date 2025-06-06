@@ -1,11 +1,11 @@
 package runner
 
 import (
+	"context"
 	"fmt"
 	"github.com/goccy/go-yaml"
 	"github.com/luispater/anyAIProxyAPI/internal/config"
 	"github.com/luispater/anyAIProxyAPI/internal/method"
-	"github.com/playwright-community/playwright-go"
 	log "github.com/sirupsen/logrus"
 	"os"
 	"path/filepath"
@@ -22,7 +22,7 @@ type RunnerResult struct {
 
 type RunnerManager struct {
 	name            string
-	page            *playwright.Page
+	pageCtx         context.Context
 	configs         map[string]Configuration
 	method          *method.Method
 	results         map[string]RunnerResult
@@ -32,11 +32,11 @@ type RunnerManager struct {
 	abort           bool
 }
 
-func NewRunnerManager(name string, appConfigRunner config.AppConfigRunner, page *playwright.Page, debug bool) (*RunnerManager, error) {
+func NewRunnerManager(name string, appConfigRunner config.AppConfigRunner, pageCtx context.Context, debug bool) (*RunnerManager, error) {
 	runner := &RunnerManager{
 		name:            name,
-		page:            page,
-		method:          method.NewMethod(page),
+		pageCtx:         pageCtx,
+		method:          method.NewMethod(pageCtx),
 		configs:         make(map[string]Configuration),
 		results:         make(map[string]RunnerResult),
 		debug:           debug,
@@ -218,7 +218,7 @@ outLoop:
 		}
 
 		if workflows[executeIndex].Action == "DoRunner" {
-			r, err := NewRunnerManager(rm.name, rm.appConfigRunner, rm.page, rm.debug)
+			r, err := NewRunnerManager(rm.name, rm.appConfigRunner, rm.pageCtx, rm.debug)
 			if err != nil {
 				log.Error(err)
 				return err
@@ -484,16 +484,16 @@ func (rm *RunnerManager) executeMethod(obj any, methodName string, params []inte
 		paramType := methodFunc.In(i)
 		paramIndex := i - 1
 
-		// Special handling for playwright.Page type, no user input required
-		if paramType.String() == "playwright.Page" {
-			args[paramIndex] = reflect.ValueOf(rm.page)
+		// Special handling for context.Context type, no user input required
+		if paramType == reflect.TypeOf((*context.Context)(nil)).Elem() {
+			args[paramIndex] = reflect.ValueOf(rm.pageCtx)
 			continue
 		}
 		if reflect.TypeOf(params[i-1]).Kind() == reflect.String {
 			input := strings.TrimSpace(reflect.ValueOf(params[i-1]).String())
 			if len(input) > 2 && input[0] == '#' && input[len(input)-1] == '#' {
 				if input == "#NEW_RUNNER#" {
-					newRm, _ := NewRunnerManager(rm.name, rm.appConfigRunner, rm.page, rm.debug)
+					newRm, _ := NewRunnerManager(rm.name, rm.appConfigRunner, rm.pageCtx, rm.debug)
 					args[paramIndex] = reflect.ValueOf(newRm)
 				} else {
 					input = input[1 : len(input)-1]
@@ -555,11 +555,11 @@ func (rm *RunnerManager) convertToType(input string, targetType reflect.Type) (r
 		return reflect.ValueOf(val), nil
 
 	default:
-		// Handle special types, such as playwright.Page
-		if targetType.String() == "playwright.Page" {
+		// Handle special types, such as context.Context
+		if targetType == reflect.TypeOf((*context.Context)(nil)).Elem() {
 			// Automatically use current page instance, no user input required
 			log.Debugf("(automatically using current page instance)")
-			return reflect.ValueOf(rm.page), nil
+			return reflect.ValueOf(rm.pageCtx), nil
 		}
 		return reflect.Value{}, fmt.Errorf("unsupported parameter type: %s", targetType.String())
 	}

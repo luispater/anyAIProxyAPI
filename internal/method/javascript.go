@@ -1,18 +1,25 @@
 package method
 
-import log "github.com/sirupsen/logrus"
+import (
+	"github.com/chromedp/chromedp"
+	log "github.com/sirupsen/logrus"
+)
 
 func (m *Method) InInnerHTML(selector, htmlContent string) error {
-	jsScript := `
-		(args) => {
-			const el = document.querySelector(args[0]);
-			if (el) {
-				el.innerHTML = args[1];
-			}
-			return el;
+	// This script will be executed in the browser's context.
+	// It takes two arguments: the selector and the HTML content.
+	jsScript := `function(selector, html) {
+		const el = document.querySelector(selector);
+		if (el) {
+			el.innerHTML = html;
 		}
-	`
-	_, err := m.page.Evaluate(jsScript, []any{selector, htmlContent})
+	}`
+	// We use CallFunctionOn to pass arguments to a JS function.
+	// 'sel' is nil, so 'this' will be the global window object.
+	// The result 'res' is also nil as we don't need a return value.
+	err := chromedp.Run(m.pageCtx,
+		chromedp.CallFunctionOn(jsScript, nil, nil, selector, htmlContent),
+	)
 	if err != nil {
 		log.Error(err)
 	}

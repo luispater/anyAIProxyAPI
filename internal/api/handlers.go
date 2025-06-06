@@ -1,10 +1,11 @@
 package api
 
 import (
+	"context"
 	"fmt"
+	"github.com/chromedp/chromedp"
 	"github.com/luispater/anyAIProxyAPI/internal/config"
 	"github.com/luispater/anyAIProxyAPI/internal/runner"
-	"github.com/playwright-community/playwright-go"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"net/http"
@@ -22,13 +23,13 @@ var ScreenshotMutex sync.Mutex
 // APIHandlers contains the handlers for API endpoints
 type APIHandlers struct {
 	queue     *RequestQueue
-	pages     map[string]playwright.Page
+	pages     map[string]context.Context
 	debug     bool
 	appConfig *config.AppConfig
 }
 
 // NewAPIHandlers creates a new API handlers instance
-func NewAPIHandlers(appConfig *config.AppConfig, queue *RequestQueue, pages map[string]playwright.Page, debug bool) *APIHandlers {
+func NewAPIHandlers(appConfig *config.AppConfig, queue *RequestQueue, pages map[string]context.Context, debug bool) *APIHandlers {
 	return &APIHandlers{
 		queue:     queue,
 		pages:     pages,
@@ -45,16 +46,17 @@ func (h *APIHandlers) TakeScreenshot(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	if page, hasKey := h.pages[instanceName]; hasKey {
+	if pageCtx, hasKey := h.pages[instanceName]; hasKey {
+		var buf []byte
+		if err := chromedp.Run(pageCtx, chromedp.CaptureScreenshot(&buf)); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to take screenshot: %v", err), "code": 500})
+			return
+		}
 		c.Header("Content-Type", "image/png")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
 		c.Header("Access-Control-Allow-Origin", "*")
-		screenshot, err := page.Screenshot()
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request: %v", err), "code": 500})
-		}
-		_, _ = c.Writer.Write(screenshot)
+		_, _ = c.Writer.Write(buf)
 	} else {
 		c.Status(http.StatusNotFound)
 	}
@@ -141,7 +143,7 @@ func (h *APIHandlers) ChatCompletions(c *gin.Context) {
 
 func (h *APIHandlers) handleContextCanceled(instanceIndex int) {
 	page := h.pages[h.appConfig.Instance[instanceIndex].Name]
-	r, err := runner.NewRunnerManager(h.appConfig.Instance[instanceIndex].Name, h.appConfig.Instance[instanceIndex].Runner, &page, h.debug)
+	r, err := runner.NewRunnerManager(h.appConfig.Instance[instanceIndex].Name, h.appConfig.Instance[instanceIndex].Runner, page, h.debug)
 	if err != nil {
 		log.Error(err)
 		return

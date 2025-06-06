@@ -9,7 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/luispater/anyAIProxyAPI/internal/proxy/proxy"
-	"github.com/playwright-community/playwright-go"
 )
 
 // Server represents the API server
@@ -25,7 +24,7 @@ type Server struct {
 type ServerConfig struct {
 	Port   string
 	Debug  bool
-	Pages  map[string]playwright.Page
+	Pages  map[string]context.Context
 	Proxys map[string]*proxy.Proxy
 }
 

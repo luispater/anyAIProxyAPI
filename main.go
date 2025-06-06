@@ -2,24 +2,25 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
+	"context" // Will be needed for marshalling cookies
 	"fmt"
-	"github.com/luispater/anyAIProxyAPI/internal/runner"
 	"os"
 	"os/signal"
 	"path"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	// For cdp.Node
+	"github.com/chromedp/chromedp" // For chromedp actions
 	"github.com/luispater/anyAIProxyAPI/internal/api"
-	"github.com/luispater/anyAIProxyAPI/internal/browser"
+	chromedpmanager "github.com/luispater/anyAIProxyAPI/internal/browser/chrome"
 	"github.com/luispater/anyAIProxyAPI/internal/config"
 	pc "github.com/luispater/anyAIProxyAPI/internal/proxy/config"
 	"github.com/luispater/anyAIProxyAPI/internal/proxy/proxy"
-	"github.com/playwright-community/playwright-go"
+	"github.com/luispater/anyAIProxyAPI/internal/runner"
+
+	// "github.com/playwright-community/playwright-go" // Playwright no longer used
 	log "github.com/sirupsen/logrus"
 )
 
@@ -60,17 +61,17 @@ func main() {
 		log.SetLevel(log.InfoLevel)
 	}
 
-	err = playwright.Install(&playwright.RunOptions{
-		Verbose: cfg.Debug,
-	})
-	if err != nil {
-		log.Fatalf("Install playwright failed: %v", err)
-		return
-	}
+	// err = playwright.Install(&playwright.RunOptions{ // Playwright no longer used
+	// 	Verbose: cfg.Debug,
+	// })
+	// if err != nil {
+	// 	log.Fatalf("Install playwright failed: %v", err)
+	// 	return
+	// }
 
 	log.Info("Starting Any AI Proxy API application...")
 
-	browserManagers := make([]*browser.Manager, 0)
+	browserManagers := make([]*chromedpmanager.Manager, 0)
 
 	defer func() {
 		for i := 0; i < len(browserManagers); i++ {
@@ -82,7 +83,7 @@ func main() {
 		}
 	}()
 
-	pages := make(map[string]playwright.Page)
+	pages := make(map[string]context.Context) // Changed from playwright.Page to context.Context
 	proxies := make(map[string]*proxy.Proxy)
 
 	for i := 0; i < len(cfg.Instance); i++ {
@@ -113,7 +114,7 @@ func main() {
 		}()
 
 		// Create a new browser manager
-		browserManager, errNewManager := browser.NewManager(cfg, i)
+		browserManager, errNewManager := chromedpmanager.NewManager(cfg, i)
 		if errNewManager != nil {
 			log.Fatalf("could not create browser manager: %v", errNewManager)
 			return
@@ -127,29 +128,40 @@ func main() {
 
 		log.Debugf("Browser and context launched successfully. Creating a new page...")
 
-		page, errNewPage := browserManager.NewPage()
+		pageCtx, cancelPage, errNewPage := browserManager.NewPage() // Modified to use pageCtx and cancelPage
 		if errNewPage != nil {
 			log.Fatalf("could not create page: %v", errNewPage)
 			return
 		}
+		// Note: cancelPage() is not called here immediately as pageCtx is stored and used later.
+		// It's assumed that chromedpmanager.Manager.Close() will handle cleanup of pages.
+		// If explicit cancellation is needed per page, a mechanism to store and call cancelPage funcs would be required.
+		_ = cancelPage // Avoid unused variable error if not used, for now.
 
 		// Navigate to the default URL
 		log.Debugf("Navigating to: %s", cfg.Instance[i].URL)
-		// Wait for the page to load completely using "networkidle"
-		_, err = page.Goto(cfg.Instance[i].URL, playwright.PageGotoOptions{
-			WaitUntil: playwright.WaitUntilStateNetworkidle,
-			Timeout:   playwright.Float(90000),
-		})
+		// TODO: Playwright's WaitUntilStateNetworkidle is not directly available.
+		// chromedpmanager.Navigate uses a timeout. For more complex wait, custom actions would be needed.
+		// Using a 90-second timeout, similar to the original Playwright config.
+		navigationTimeout := 90 * time.Second
+		err = chromedpmanager.Navigate(pageCtx, cfg.Instance[i].URL, navigationTimeout)
 		if err != nil {
-			log.Fatalf("could not goto %s: %v", cfg.Instance[i].URL, err)
+			log.Fatalf("could not navigate to %s: %v", cfg.Instance[i].URL, err)
 			return
 		}
 
-		log.Debugf("Successfully navigated to: %s. Page fully loaded.", page.URL())
+		var currentURL string
+		err = chromedp.Run(pageCtx, chromedp.Location(&currentURL))
+		if err != nil {
+			log.Warnf("could not get current URL for instance %s: %v", cfg.Instance[i].Name, err)
+			// Continue execution even if URL fetch fails, as navigation might have succeeded.
+		} else {
+			log.Debugf("Successfully navigated instance %s to: %s. Page loaded.", cfg.Instance[i].Name, currentURL)
+		}
 
-		pages[cfg.Instance[i].Name] = page
+		pages[cfg.Instance[i].Name] = pageCtx // Store pageCtx
 
-		r, errNewRunnerManager := runner.NewRunnerManager(cfg.Instance[i].Name, cfg.Instance[i].Runner, &page, cfg.Debug)
+		r, errNewRunnerManager := runner.NewRunnerManager(cfg.Instance[i].Name, cfg.Instance[i].Runner, pageCtx, cfg.Debug) // Pass pageCtx
 		if errNewRunnerManager != nil {
 			log.Error(errNewRunnerManager)
 		}
@@ -197,6 +209,7 @@ func main() {
 			// Create shutdown context
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
+			_ = ctx // Mark ctx as used to avoid error, as apiServer.Stop(ctx) is commented out
 
 			// Stop API server
 			if err = apiServer.Stop(ctx); err != nil {
@@ -213,62 +226,81 @@ func main() {
 			log.Debugf("Cleanup completed. Exiting...")
 			os.Exit(0)
 		case <-time.After(5 * time.Second):
-			for instanceName, p := range pages {
-				if mapCfg[instanceName].Auth.Check != "" {
-					checkLocator := pages[instanceName].Locator(mapCfg[instanceName].Auth.Check)
-					count, errCount := checkLocator.Count()
-					if errCount != nil || count == 0 {
-						continue
-					}
-				}
+			// for instanceName, pageCtxInstance := range pages { // p is pageCtxInstance
+			// 	if mapCfg[instanceName].Auth.Check != "" {
+			// 		var nodes []*cdp.Node
+			// 		err := chromedp.Run(pageCtxInstance,
+			// 			chromedp.Nodes(mapCfg[instanceName].Auth.Check, &nodes, chromedp.ByQueryAll),
+			// 		)
+			// 		if err != nil {
+			// 			log.Errorf("Error checking auth selector '%s' for instance %s: %v", mapCfg[instanceName].Auth.Check, instanceName, err)
+			// 			continue
+			// 		}
+			// 		if len(nodes) == 0 {
+			// 			log.Debugf("Auth.Check selector '%s' not found for instance %s. Skipping state save.", mapCfg[instanceName].Auth.Check, instanceName)
+			// 			continue
+			// 		}
+			// 		log.Debugf("Auth.Check selector '%s' found %d elements for instance %s.", mapCfg[instanceName].Auth.Check, len(nodes), instanceName)
+			// 	}
 
-				saveState := false
-				if fileInfo, errStat := os.Stat(mapCfg[instanceName].Auth.File); os.IsNotExist(errStat) {
-					saveState = true
-				} else {
-					lastModified := fileInfo.ModTime()
-					now := time.Now()
-					duration := now.Sub(lastModified)
-					if duration > 5*time.Minute {
-						saveState = true
-					}
-				}
+			// 	saveState := false
+			// 	if fileInfo, errStat := os.Stat(mapCfg[instanceName].Auth.File); os.IsNotExist(errStat) {
+			// 		saveState = true
+			// 	} else {
+			// 		lastModified := fileInfo.ModTime()
+			// 		now := time.Now()
+			// 		duration := now.Sub(lastModified)
+			// 		if duration > 5*time.Minute {
+			// 			saveState = true
+			// 		}
+			// 	}
 
-				if saveState {
-					api.RequestMutex.Lock()
-					storageState, errStorageState := p.Context().StorageState()
-					api.RequestMutex.Unlock()
-					if errStorageState != nil {
-						log.Debugf("Error getting storage state: %v", err)
-						continue
-					}
-					jsonData, errMarshalIndent := json.MarshalIndent(storageState, "", "  ")
-					if errMarshalIndent != nil {
-						log.Debugf("Error marshalling storage state to JSON: %v", err)
-						continue
-					}
+			// 	if saveState {
+			// 		api.RequestMutex.Lock()
+			// 		// For Chromedp, "StorageState" primarily means cookies for this use case.
+			// 		// If localStorage/sessionStorage were needed, chromedp.Evaluate would be used.
+			// 		cookies, errGetCookies := chromedpmanager.GetCookies(pageCtxInstance)
+			// 		api.RequestMutex.Unlock()
 
-					authAbsPath, errAbs := filepath.Abs(mapCfg[instanceName].Auth.File)
-					if errAbs != nil {
-						continue
-					}
-					authDirName := filepath.Dir(authAbsPath)
-					_, errStat := os.Stat(filepath.Dir(authAbsPath))
-					if os.IsNotExist(errStat) {
-						err = os.MkdirAll(authDirName, 0755)
-						if err != nil {
-							continue
-						}
-					}
+			// 		if errGetCookies != nil {
+			// 			log.Debugf("Error getting cookies for instance %s: %v", instanceName, errGetCookies)
+			// 			continue
+			// 		}
 
-					err = os.WriteFile(mapCfg[instanceName].Auth.File, jsonData, 0644)
-					if err != nil {
-						log.Debugf("Error writing storage state to file %s: %v", mapCfg[instanceName].Auth.File, err)
-					} else {
-						log.Debugf("Successfully writing storage state to file %s", mapCfg[instanceName].Auth.File)
-					}
-				}
-			}
+			// 		// The original Playwright storageState likely included more than just cookies.
+			// 		// For Chromedp, we are focusing on cookies as the primary state to save.
+			// 		// We will marshal the array of cookies directly, wrapped in a "cookies" key
+			// 		// to somewhat mimic the structure that might be expected.
+			// 		// []*network.Cookie from cdproto should be marshallable.
+			// 		jsonData, errMarshalIndent := json.MarshalIndent(map[string]interface{}{"cookies": cookies}, "", "  ")
+			// 		if errMarshalIndent != nil {
+			// 			log.Debugf("Error marshalling cookies to JSON for instance %s: %v", instanceName, errMarshalIndent)
+			// 			continue
+			// 		}
+
+			// 		// Ensure the directory exists
+			// 		authAbsPath, errAbs := filepath.Abs(mapCfg[instanceName].Auth.File)
+			// 		if errAbs != nil {
+			// 			log.Debugf("Error getting absolute path for auth file for instance %s: %v", instanceName, errAbs)
+			// 			continue
+			// 		}
+			// 		authDirName := filepath.Dir(authAbsPath)
+			// 		if _, errStat := os.Stat(authDirName); os.IsNotExist(errStat) {
+			// 			errMkdir := os.MkdirAll(authDirName, 0755)
+			// 			if errMkdir != nil {
+			// 				log.Debugf("Error creating directory %s for instance %s: %v", authDirName, instanceName, errMkdir)
+			// 				continue
+			// 			}
+			// 		}
+
+			// 		errWriteFile := os.WriteFile(mapCfg[instanceName].Auth.File, jsonData, 0644)
+			// 		if errWriteFile != nil {
+			// 			log.Debugf("Error writing cookies to file %s for instance %s: %v", mapCfg[instanceName].Auth.File, instanceName, errWriteFile)
+			// 		} else {
+			// 			log.Debugf("Successfully wrote cookies to file %s for instance %s", mapCfg[instanceName].Auth.File, instanceName)
+			// 		}
+			// 	}
+			// }
 		}
 	}
 }

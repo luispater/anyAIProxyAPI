@@ -2,8 +2,11 @@ package method
 
 import (
 	"fmt"
+	"github.com/chromedp/chromedp"
 	"reflect"
 	"strings"
+	// playwright-go import will be removed if no longer needed by other files in this package
+	// "github.com/playwright-community/playwright-go"
 )
 
 func (m *Method) AlwaysTrue() bool {
@@ -11,7 +14,11 @@ func (m *Method) AlwaysTrue() bool {
 }
 
 func (m *Method) GetLocalStorage(name string) (any, error) {
-	value, err := m.page.Evaluate(fmt.Sprintf(`() => localStorage.getItem('%s')`, name))
+	var value any
+	script := fmt.Sprintf(`localStorage.getItem('%s')`, name)
+	err := chromedp.Run(m.pageCtx,
+		chromedp.Evaluate(script, &value),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -19,8 +26,10 @@ func (m *Method) GetLocalStorage(name string) (any, error) {
 }
 
 func (m *Method) SetLocalStorage(name, value string) error {
-	_, err := m.page.Evaluate(fmt.Sprintf(`() => {localStorage.setItem('%s', '%s')}`, name, value))
-	return err
+	script := fmt.Sprintf(`localStorage.setItem('%s', '%s')`, name, value)
+	return chromedp.Run(m.pageCtx,
+		chromedp.Evaluate(script, nil), // result is not needed for setItem
+	)
 }
 
 func (m *Method) Int(i int) (int, error) {

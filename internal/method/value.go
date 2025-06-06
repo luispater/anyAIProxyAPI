@@ -1,21 +1,39 @@
 package method
 
 import (
+	"context"
 	"fmt"
-	"github.com/playwright-community/playwright-go"
+	"time"
+
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/chromedp"
 )
 
 func (m *Method) Value(elementSelector string, timeout float64) (string, error) {
-	element := m.page.Locator(elementSelector).First() // Use First() to get the first match if multiple
-	count, err := element.Count()
+	opCtx := m.pageCtx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		opCtx, cancel = context.WithTimeout(m.pageCtx, time.Duration(timeout*float64(time.Millisecond)))
+		defer cancel()
+	}
+
+	// First, ensure the element exists to provide a better error message.
+	var nodes []*cdp.Node
+	err := chromedp.Run(opCtx,
+		chromedp.Nodes(elementSelector, &nodes, chromedp.ByQuery, chromedp.AtLeast(0)),
+	)
 	if err != nil {
-		return "", fmt.Errorf("error counting elements with selector '%s': %v", elementSelector, err)
+		return "", fmt.Errorf("error finding element with selector '%s': %v", elementSelector, err)
 	}
-	if count > 0 {
-		return element.InputValue(playwright.LocatorInputValueOptions{
-			Timeout: playwright.Float(timeout),
-		})
-	} else {
-		return "", fmt.Errorf("error: Element with selector '%s' not found on page %s", elementSelector, m.page.URL())
+	if len(nodes) == 0 {
+		var currentURL string
+		_ = chromedp.Run(m.pageCtx, chromedp.Location(&currentURL))
+		return "", fmt.Errorf("error: Element with selector '%s' not found on page %s", elementSelector, currentURL)
 	}
+
+	var value string
+	if err := chromedp.Run(opCtx, chromedp.Value(elementSelector, &value, chromedp.ByQuery)); err != nil {
+		return "", fmt.Errorf("error getting value from element '%s': %v", elementSelector, err)
+	}
+	return value, nil
 }

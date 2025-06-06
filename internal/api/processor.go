@@ -14,19 +14,18 @@ import (
 
 	"github.com/luispater/anyAIProxyAPI/internal/proxy/model"
 	"github.com/luispater/anyAIProxyAPI/internal/proxy/proxy"
-	"github.com/playwright-community/playwright-go"
 )
 
 // ChatProcessor implements TaskProcessor interface
 type ChatProcessor struct {
-	pages     map[string]playwright.Page
+	pages     map[string]context.Context
 	proxies   map[string]*proxy.Proxy
 	debug     bool
 	appConfig *config.AppConfig
 }
 
 // NewChatProcessor creates a new chat processor
-func NewChatProcessor(appConfig *config.AppConfig, pages map[string]playwright.Page, proxies map[string]*proxy.Proxy, debug bool) *ChatProcessor {
+func NewChatProcessor(appConfig *config.AppConfig, pages map[string]context.Context, proxies map[string]*proxy.Proxy, debug bool) *ChatProcessor {
 	return &ChatProcessor{
 		pages:     pages,
 		proxies:   proxies,
@@ -75,7 +74,7 @@ func (cp *ChatProcessor) processNonStreamingTask(instanceName string, appConfigR
 	streamChan := make(chan string, 100)
 
 	page := cp.pages[instanceName]
-	r, errNewRunnerManager := runner.NewRunnerManager(instanceName, appConfigRunner, &page, cp.debug)
+	r, errNewRunnerManager := runner.NewRunnerManager(instanceName, appConfigRunner, page, cp.debug)
 	go func() {
 		if errNewRunnerManager != nil {
 			log.Debug(errNewRunnerManager)
@@ -165,7 +164,7 @@ func (cp *ChatProcessor) processStreamingTask(instanceName string, appConfigRunn
 	errChannel := make(chan error)
 
 	page := cp.pages[instanceName]
-	r, errNewRunnerManager := runner.NewRunnerManager(instanceName, appConfigRunner, &page, cp.debug)
+	r, errNewRunnerManager := runner.NewRunnerManager(instanceName, appConfigRunner, page, cp.debug)
 	go func() {
 		if errNewRunnerManager != nil {
 			log.Debug(errNewRunnerManager)

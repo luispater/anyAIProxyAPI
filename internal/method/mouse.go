@@ -1,41 +1,54 @@
 package method
 
 import (
+	"context"
 	"fmt"
-	"github.com/playwright-community/playwright-go"
+	"time"
+
+	"github.com/chromedp/chromedp"
 	log "github.com/sirupsen/logrus"
 )
 
+var lastClickTime time.Time
+
 func (m *Method) Click(elementSelector string, timeout float64) error {
+	if time.Since(lastClickTime) < 400*time.Millisecond {
+		log.Debugf("Click too fast, wait for 1s")
+		time.Sleep(400 * time.Millisecond)
+	}
+	lastClickTime = time.Now()
 	log.Debugf("Attempting to find and click element with selector: %s", elementSelector)
-	element := m.page.Locator(elementSelector) // Use First() to get the first match if multiple
-	count, err := element.Count()
+
+	opCtx := m.pageCtx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		opCtx, cancel = context.WithTimeout(m.pageCtx, time.Duration(timeout*float64(time.Millisecond)))
+		defer cancel()
+	}
+
+	err := chromedp.Run(opCtx,
+		// First, wait for the element to be visible. This replaces the IsVisible check.
+		chromedp.WaitVisible(elementSelector, chromedp.ByQuery),
+		// Then, click the element.
+		chromedp.Click(elementSelector, chromedp.ByQuery),
+	)
+
 	if err != nil {
-		return fmt.Errorf("error counting elements with selector '%s': %v", elementSelector, err)
+		var currentURL string
+		// Best effort to get URL for error context
+		_ = chromedp.Run(m.pageCtx, chromedp.Location(&currentURL))
+		return fmt.Errorf("error clicking element '%s' on page %s: %v", elementSelector, currentURL, err)
 	}
-	if count > 0 {
-		element = element.First()
-		isVisible, errIsVisible := element.IsVisible()
-		if errIsVisible != nil {
-			return fmt.Errorf("error checking visibility of element '%s': %v", elementSelector, errIsVisible)
-		} else if isVisible {
-			log.Debugf("Element '%s' found and is visible. Attempting to click...", elementSelector)
-			if err = element.Click(playwright.LocatorClickOptions{
-				Timeout: playwright.Float(timeout),
-			}); err != nil {
-				return fmt.Errorf("error clicking element '%s': %v", elementSelector, err)
-			} else {
-				log.Debugf("Successfully clicked element '%s'.", elementSelector)
-			}
-		} else {
-			return fmt.Errorf("element '%s' found but is not visible", elementSelector)
-		}
-	} else {
-		return fmt.Errorf("error: Element with selector '%s' not found on page %s", elementSelector, m.page.URL())
-	}
+
+	log.Debugf("Successfully clicked element '%s'.", elementSelector)
 	return nil
 }
 
 func (m *Method) MouseClick(x, y float64) error {
-	return m.page.Mouse().Click(x, y)
+	if time.Since(lastClickTime) < 400*time.Millisecond {
+		log.Debugf("Click too fast, wait for 1s")
+		time.Sleep(400 * time.Millisecond)
+	}
+
+	return chromedp.Run(m.pageCtx, chromedp.MouseClickXY(x, y))
 }

@@ -3,9 +3,10 @@ package method
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/playwright-community/playwright-go"
+	"github.com/chromedp/chromedp"
 	log "github.com/sirupsen/logrus"
-	"reflect"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -745,81 +746,78 @@ var MimeTypes = map[string]string{
 	"x-conference/x-cooltalk":                                                   "ice",
 }
 
-func (m *Method) UploadFiles(runner any, base64edImage []string) error {
-	fileChooser, err := m.page.ExpectFileChooser(func() error {
-		// I'm sorry for this, Golang disallows import cycles.
-		// This means I cannot import the runner package into the method package.
-		methodValue := reflect.ValueOf(runner)
-		methodType := reflect.TypeOf(runner)
-
-		_, found := methodType.MethodByName("Run")
-		if !found {
-			return fmt.Errorf("method 'Run' not found")
-		}
-
-		args := make([]reflect.Value, 1)
-		args[0] = reflect.ValueOf("open-upload-dialog")
-		results := methodValue.MethodByName("Run").Call(args)
-		if len(results) > 0 {
-			if results[0].IsNil() {
-				return nil
-			}
-			return results[0].Interface().(error)
-		}
-		return nil
-	})
+// UploadFiles now takes an input file element selector instead of a runner.
+// The caller is responsible for any action that might be needed to make the input element visible
+// before calling this method.
+func (m *Method) UploadFiles(inputFileSelector string, base64edImages []string) error {
+	// 1. Create a temporary directory for the files
+	tempDir, err := os.MkdirTemp("", "upload-")
 	if err != nil {
-		return fmt.Errorf("could not get file chooser: %v", err)
-	} else {
-		inputFiles := make([]playwright.InputFile, 0)
-		for i := 0; i < len(base64edImage); i++ {
-			data := base64edImage[i]
-			if !strings.HasPrefix(data, "data:") {
-				log.Warnf("No data tag error: %v", err)
-				continue
-			}
-
-			split := strings.SplitN(data[5:], ",", 2)
-			if len(split) != 2 {
-				log.Warnf("Image data error: %v", err)
-				continue
-			}
-
-			mineType := split[0]
-			base64edData := split[1]
-
-			semicolonIndex := strings.Index(mineType, ";")
-			if semicolonIndex != -1 {
-				mineType = mineType[:semicolonIndex]
-			}
-
-			rawData, errDecodeString := base64.StdEncoding.DecodeString(base64edData)
-			if errDecodeString != nil {
-				log.Warnf("Could not decode base64 image: %v", err)
-				return fmt.Errorf("could not decode base64 image: %v", err)
-			}
-			if ext, ok := MimeTypes[mineType]; ok {
-				fileName := fmt.Sprintf("file_%d.%s", i, ext)
-				inputFile := playwright.InputFile{
-					Name:     fileName,
-					MimeType: mineType,
-					Buffer:   rawData,
-				}
-				inputFiles = append(inputFiles, inputFile)
-			}
-		}
-
-		if len(inputFiles) == 0 {
-			log.Warnf("No file to upload: %v", err)
-			return fmt.Errorf("no file to upload: %v", err)
-		}
-
-		err = fileChooser.SetFiles(inputFiles)
-		if err != nil {
-			log.Warnf("Could not set files for single input: %v", err)
-			return fmt.Errorf("could not set files for single input: %v", err)
-		}
-
-		return nil
+		return fmt.Errorf("could not create temp dir: %v", err)
 	}
+	defer os.RemoveAll(tempDir) // Clean up the temp dir
+
+	var filePaths []string
+
+	// 2. Decode base64 images and save them as temporary files
+	for i, data := range base64edImages {
+		if !strings.HasPrefix(data, "data:") {
+			log.Warnf("Skipping invalid base64 data at index %d: missing 'data:' prefix", i)
+			continue
+		}
+
+		parts := strings.SplitN(data[5:], ",", 2)
+		if len(parts) != 2 {
+			log.Warnf("Skipping invalid base64 data at index %d: could not split mime and data", i)
+			continue
+		}
+
+		mimeType := parts[0]
+		base64Data := parts[1]
+
+		if semicolonIndex := strings.Index(mimeType, ";"); semicolonIndex != -1 {
+			mimeType = mimeType[:semicolonIndex]
+		}
+
+		rawData, err := base64.StdEncoding.DecodeString(base64Data)
+		if err != nil {
+			log.Warnf("Could not decode base64 data at index %d: %v", i, err)
+			continue // Or return error? The original code continued.
+		}
+
+		ext, ok := MimeTypes[mimeType]
+		if !ok {
+			log.Warnf("Unknown mime type '%s' at index %d, skipping file", mimeType, i)
+			continue
+		}
+
+		// Create a temporary file
+		fileName := fmt.Sprintf("file_%d.%s", i, ext)
+		filePath := filepath.Join(tempDir, fileName)
+
+		if err := os.WriteFile(filePath, rawData, 0644); err != nil {
+			return fmt.Errorf("could not write to temp file '%s': %v", filePath, err)
+		}
+		filePaths = append(filePaths, filePath)
+	}
+
+	if len(filePaths) == 0 {
+		log.Warn("No valid files to upload after processing base64 data.")
+		return fmt.Errorf("no valid files to upload") // Match original error
+	}
+
+	// 3. Use chromedp.SetUploadFiles
+	log.Debugf("Attempting to upload %d files to input element '%s'", len(filePaths), inputFileSelector)
+	err = chromedp.Run(m.pageCtx,
+		// We might need to make the input visible first if it's hidden
+		// For example: chromedp.SetAttribute(inputFileSelector, "style", "display: block;", chromedp.ByQuery),
+		chromedp.SetUploadFiles(inputFileSelector, filePaths, chromedp.ByQuery),
+	)
+
+	if err != nil {
+		return fmt.Errorf("could not set files for upload on element '%s': %v", inputFileSelector, err)
+	}
+
+	log.Debugf("Successfully set %d files for upload.", len(filePaths))
+	return nil
 }
