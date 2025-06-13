@@ -73,7 +73,7 @@ func NewPage(browserCtx context.Context, adapterName string, url string, authFil
 				exec := cdp.WithExecutor(newPageCtx, ctx.Target)
 
 				if ev.Request.Method == "POST" {
-					if utils.InArray(ev.Request.URL, sniffURL) {
+					if utils.MatchUrl(sniffURL, ev.Request.URL) {
 						var buf bytes.Buffer
 
 						handle, errTakeResponseBodyAsStream := fetch.TakeResponseBodyAsStream(ev.RequestID).Do(exec)
